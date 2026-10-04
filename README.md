@@ -1,10 +1,11 @@
-# KOReader Playground
+# E-reader Playground
 
-My personal playground for reproducible KOReader setup across e-readers,
-starting with my jailbroken Kindle. Experiments, scripts, plugin versions,
+My personal playground for repeatable setup across e-readers: KOReader on my
+jailbroken Kindle, and personal CrossPoint firmware on my Xteink X4 Pro.
+Experiments, scripts, plugin versions,
 and optional device profiles live here; credentials and device state do not.
 
-## Setup
+## KOReader setup
 
 Requires Git and Python 3.9+. Install KOReader separately first, quit it before
 changing files, and mount the device's storage on your computer.
@@ -141,3 +142,97 @@ python3 -m unittest discover -s tests
 ```
 
 Tests use temporary mock installations, never the mounted e-reader.
+
+## Xteink X4 Pro / personal CrossPoint
+
+`crosspoint-reader/` is a pinned submodule of
+[my fork](https://github.com/jfmyers9/crosspoint-reader), configured to track
+`personal/develop` for deliberate updates. It is separate firmware, not a
+KOReader plugin. Nested FreeInk SDK and MicroLink submodules are also pinned.
+This workflow never merges upstream or drops my personal features.
+
+### Prepare and build
+
+The pinned revision includes fixes for the missing mapped-input edge methods
+and duplicate EPUB render definitions found in `f175cda9`. The corrected source
+builds successfully for `x4pro` with pioarduino 6.1.19; 24 focused host tests
+pass. Hardware behavior remains unverified; no device has been flashed by
+this setup.
+
+```sh
+git submodule update --init --recursive
+# Python 3.12 or 3.13 recommended for the embedded tooling (fork CI uses 3.13).
+python3.12 scripts/x4pro.py prepare
+python3 scripts/x4pro.py build
+python3 scripts/x4pro.py ports
+```
+
+`prepare` creates `.local/crosspoint-toolchain/` and installs the fork's
+pioarduino Core 6.1.19 and CI support dependencies without modifying global
+Python. Repeat runs reuse it. The first build downloads compiler/platform
+packages and can take substantial time and disk space. PlatformIO also uses
+its normal user-level cache and may bootstrap `~/.platformio/penv`. Add
+`--dry-run` to any command to print it without
+installing, building, or flashing. Preparation requires network access.
+
+The helper always selects **`x4pro` (ESP32-S3)**, never the default ESP32-C3
+X4 target. It delegates incremental builds to PlatformIO. It rejects tracked
+source changes, untracked files, mismatched nested submodules, and `platformio.local.ini`
+overrides rather than silently building a different configuration. Commit
+personal firmware changes in the fork before using this setup workflow.
+Source revisions are pinned; Python transitive dependencies are not fully
+locked, so this is not a bit-for-bit reproducible toolchain.
+
+### Flash deliberately
+
+Back up the SD card, including hidden `.crosspoint/` settings and reading state,
+to private storage outside Git first. Exit USB Drive mode, connect a data-capable
+USB cable, and use `ports` to identify your X4 Pro's serial port. A mounted SD
+volume is not the flashing target. Close serial monitors before uploading.
+
+```sh
+python3 scripts/x4pro.py flash --port /dev/cu.usbmodemXXXX --dry-run
+python3 scripts/x4pro.py flash --port /dev/cu.usbmodemXXXX --confirm-flash
+```
+
+Flashing is explicit every time: there is no automatic port selection, erase
+step, or claim that the connected device's firmware already matches. PlatformIO
+builds then uploads; it can overwrite application, bootloader, and partition
+data. The helper does not back up flash/NVS or guarantee rollback. Confirm the
+device is an **X4 Pro**, not an X4 or another ESP32-S3 board. It cannot infer the
+board identity just from a serial path. USB-locked devices need the fork's
+[documented unlock procedure](crosspoint-reader/README.md#usb-locked-devices-xteink-unlocker);
+do not experiment with erase/unlock commands.
+
+Alternatively, use `.pio/build/x4pro/firmware.bin` under `crosspoint-reader/`
+with the [CrossPoint web flasher's Custom .bin option](https://crosspointreader.com/#flash-tools),
+selecting X4 Pro. Verify boot, touch/buttons, frontlight, sleep/wake, book
+opening, USB Drive mode, and your personal features after flashing.
+
+### Personal features and secrets
+
+The branch's standard `x4pro` build includes its experimental on-demand
+Tailscale/MicroLink transport and BookOrbit features. Follow the fork's
+[X4 Pro Tailscale setup](crosspoint-reader/docs/x4pro-tailscale.md) for enrollment
+and its limitations. Wi-Fi, service credentials, auth keys, SD state, and NVS
+identity remain device-owned; this repo does not provision or commit them.
+Do not copy the Kindle's Tailscale plugin, binaries, or identity to this device.
+Avoid official OTA updates if you want to retain the personal firmware.
+
+### Update the personal branch pin
+
+```sh
+git -C crosspoint-reader fetch origin personal/develop
+git -C crosspoint-reader switch personal/develop
+git -C crosspoint-reader merge --ff-only origin/personal/develop
+git -C crosspoint-reader submodule update --init --recursive
+python3 scripts/x4pro.py build
+git add crosspoint-reader
+# Review and commit the new gitlink; flashing remains a separate explicit step.
+```
+
+After a recursive clone the submodule may be detached; `switch personal/develop`
+reattaches to your fork's branch. Normal setup uses the recorded gitlink and
+does not fetch the latest branch tip. The helper follows the fork's
+`platformio.ini` X4 Pro target, `docs/x4pro-tailscale.md`, and CI dependency setup;
+review those if you update the pin.
