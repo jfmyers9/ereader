@@ -59,8 +59,19 @@ def plan(target, profile):
             if relative not in ALLOWED_FILES:
                 raise ValueError(f"Unsupported settings destination: {relative}")
             rules.setdefault(relative, []).append(source)
+    return plan_files(target, rules)
+
+
+def plan_files(target, rules):
+    """Merge explicit profile files without implicitly applying shared preferences."""
+    target = Path(target)
+    lua = shutil.which("luajit")
+    if not lua:
+        raise ValueError("Settings profiles require host LuaJIT (macOS: brew install luajit)")
     changes = []
     for relative, sources in sorted(rules.items()):
+        if relative not in ALLOWED_FILES:
+            raise ValueError(f"Unsupported settings destination: {relative}")
         destination = target / relative
         if any(path.is_symlink() for path in (destination, *destination.parents)):
             raise ValueError("Symlinked settings destination is unsupported")

@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "dictionaries": [
+    {
+      "id": "gcide",
+      "name": "GNU Collaborative International Dictionary of English",
+      "snapshot": "KOReader build server snapshot, Last-Modified 2019-01-09",
+      "language": "en-en",
+      "archive": "gcide.tar.gz",
+      "url": "https://build.koreader.rocks/download/dict/gcide.tar.gz",
+      "source": "https://gcide.gnu.org/",
+      "license": "GPL-3.0-or-later (KOReader catalog)",
+      "sha256": "be3c1293e3ebcd9bfbfea24b0a73381def27be665dec4c23c03896d4b42ab7f1",
+      "prefix": "gcide/",
+      "members": [
+        "stardict.ifo",
+        "stardict.idx",
+        "stardict.dict.dz",
+        "stardict.syn"
+      ]
+    },
+    {
+      "id": "wiktionnaire-fr",
+      "name": "reader.dict FR",
+      "snapshot": "2026-10-01 (download page updated 2026-10-03)",
+      "language": "fr-fr",
+      "archive": "wiktionnaire-fr.zip",
+      "url": "https://www.reader-dict.com/file/fr/dict-fr-fr.zip",
+      "source": "https://www.reader-dict.com/download/fr",
+      "license": "Wiktionary-derived; see upstream terms and attribution (retained in dictionary entries)",
+      "sha256": "1ad7da5ccb0bb52b4e42d3a0c0de4f16c8ef6281cfeb453b17e22ed43340a3ed",
+      "prefix": "",
+      "members": [
+        "reader.dict-fr.ifo",
+        "reader.dict-fr.idx",
+        "reader.dict-fr.dict.dz",
+        "reader.dict-fr.syn"
+      ]
+    }
+  ]
+}
