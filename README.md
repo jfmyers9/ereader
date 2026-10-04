@@ -71,30 +71,50 @@ Any gesture bound to the removed combined toggle must be rebound on the device.
 
 `scripts/fonts.py` manages the same four **static TTF** styles (regular, bold,
 italic, bold italic) for both readers. `profiles/fonts.json` defines the set and
-pins the official Literata 3.103 release by SHA-256. Requirements: Python 3.9+
+pins the official Literata 3.103 and Amazon March 2020 releases by SHA-256. Requirements: Python 3.9+
 and `curl` for the initial download; no font-conversion dependencies.
 
 Prepare the host library once:
 
 ```sh
-python3 scripts/fonts.py fetch-literata
+python3 scripts/fonts.py fetch
+```
+
+On a new computer, clone this repository and run that same command; no manual
+Bookerly transfer or Kindle extraction is required. It downloads only missing
+releases and reuses verified cached copies offline. You can also fetch a single
+family with `fetch-bookerly` or `fetch-literata`. To avoid downloads altogether,
+privately copy `.local/fonts/` from the old computer. Availability still depends
+on the upstream URLs; checksum mismatches fail rather than accept changed files.
+
+Bookerly comes from the official Amazon package linked on its
+[typography page](https://developer.amazon.com/en-US/alexa/branding/echo-guidelines/identity-guidelines/typography).
+The installer selects the standard eInk TTFs, not the LCD or Display variants,
+and preserves `Amazon Ember Licensing Guidelines.pdf` with the fonts on both
+devices. This document covers Bookerly too: it states there are no license
+payments or royalties, but its introduction addresses internal Amazon teams.
+Public availability is not an open-source license; review the bundled guidelines
+and applicable Amazon terms for your use. Download automation does not grant
+additional rights. Binaries and local manifests stay in gitignored `.local/fonts/`;
+do not commit or redistribute that private directory.
+
+Optional offline import remains available:
+
+```sh
 python3 scripts/fonts.py import-bookerly /path/to/private/bookerly
 ```
 
-The Bookerly directory must contain `Bookerly-Regular.ttf`, `Bookerly-Bold.ttf`,
-`Bookerly-Italic.ttf`, and `Bookerly-BoldItalic.ttf`. Bookerly is proprietary:
-provide your own lawfully obtained copy and confirm your license permits its use
-on the intended device. Kindle system fonts may live under `/usr/java/lib/fonts`
-(not the USB-visible storage); this tool does not extract them or download fonts
-from unofficial mirrors. KOReader discovering a system copy does not populate
-this portable library. Font binaries and import checksums stay in gitignored
-`.local/fonts/`; do not commit or redistribute that private directory.
+That directory must contain `Bookerly-Regular.ttf`, `Bookerly-Bold.ttf`,
+`Bookerly-Italic.ttf`, and `Bookerly-BoldItalic.ttf`. An imported copy can be
+installed without downloading. Running `fetch` verifies it against the official
+archive and adds the guidelines and pinned provenance **only if every font is
+byte-identical**; a different private version is preserved and reported as a
+conflict. Move its cache folder aside if you intentionally want the pinned copy.
 
 Literata's OFL license travels with its files. The official release supplies
 static fonts, so neither device needs variable-font handling or conversion.
 Preparation validates family/style metadata; installs recheck cached hashes.
-An existing import is not silently replaced: move its cache folder aside if
-you intentionally want to import a different version.
+Existing font bytes are never silently replaced by a different release.
 
 Install offline, with the reader stopped and storage mounted:
 
@@ -114,7 +134,7 @@ python3 scripts/install.py /Volumes/Kindle/koreader --fonts
 
 By default **both families and all four styles are required**: missing or corrupt
 sources fail before font writes, rather than silently falling back. To try only
-Literata before sourcing Bookerly, explicitly add `--family Literata` to the
+Literata alone, explicitly add `--family Literata` to the
 standalone installer. This is a partial install, not the guaranteed full set.
 Existing setup commands without `--fonts` retain their previous behavior.
 

@@ -4,7 +4,7 @@ return {
 -- Seed it only when absent; never downgrade an existing schema marker.
 seed = { bookorbit = { settings_version = 1 } },
 set = {
-    cre_font = "Bookerly", -- Provision with scripts/fonts.py; private import, not redistributed.
+    cre_font = "Bookerly", -- Provision with scripts/fonts.py fetch and install; binaries stay out of Git.
     copt_font_size = 17,
     copt_line_spacing = 110,
     copt_embedded_fonts = 0,

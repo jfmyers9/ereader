@@ -15,6 +15,8 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / ".local/fonts"
 LOCK = ROOT / "profiles/fonts.json"
+AMAZON_PREFIX = "Amazon_Typefaces_Complete_Font_Set_Mar2020/"
+AMAZON_GUIDELINES = "Amazon Ember Licensing Guidelines.pdf"
 
 
 def profile():
@@ -58,12 +60,29 @@ def validate_ttf(data, family, style):
         raise ValueError("Malformed TrueType font") from error
 
 
-def save_family(family, files, source):
+def save_family(family, files, source, upgrade_import=False):
     destination = CACHE / family
     # Cache replacement is explicit, never silently repin an existing import.
     if destination.exists():
         existing = prepared_files([family])
-        if {p.name: p.read_bytes() for _, p in existing} == files:
+        previous = {p.name: p.read_bytes() for _, p in existing}
+        if upgrade_import and all(files.get(name) == data for name, data in previous.items()):
+            # Only adopt official provenance after a verified download matches every
+            # imported byte. Never overwrite a different private font version.
+            manifest = {"source": source, "files": {name: sha(data) for name, data in files.items()}}
+            for name, data in files.items():
+                if name not in previous:
+                    (destination / name).write_bytes(data)
+            fd, temporary = tempfile.mkstemp(dir=destination, suffix=".part")
+            try:
+                with os.fdopen(fd, "w") as stream:
+                    stream.write(json.dumps(manifest, indent=2) + "\n")
+                os.replace(temporary, destination / "manifest.json")
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+            print(f"Verified imported {family} against official release; preserved guidelines.")
+            return
+        if previous == files:
             print(f"Cached: {family}")
             return
         raise ValueError(f"Different cached {family}; move {destination} aside before replacing it")
@@ -81,34 +100,46 @@ def save_family(family, files, source):
     print(f"Prepared: {family}")
 
 
-def fetch_literata():
-    pin = profile()["literata"]
-    if (CACHE / "Literata").exists():
-        prepared_files(["Literata"])
-        print("Cached: Literata")
-        return
+def fetch_family(family):
+    pin = profile()[family.lower()]
+    upgrade_import = False
+    if (CACHE / family).exists():
+        prepared_files([family])
+        meta = json.loads((CACHE / family / "manifest.json").read_text())
+        upgrade_import = family == "Bookerly" and isinstance(meta["source"], str)
+        if not upgrade_import:
+            print(f"Cached: {family}")
+            return
     CACHE.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=CACHE) as directory:
-        archive = Path(directory) / "literata.zip"
+        archive = Path(directory) / "fonts.zip"
         subprocess.run([
             "curl", "--fail", "--location", "--proto", "=https", "--proto-redir", "=https",
             "--connect-timeout", "20", "--max-time", "180", "--output", str(archive), pin["url"],
         ], check=True)
         if sha(archive.read_bytes()) != pin["sha256"]:
-            raise ValueError("Literata archive checksum mismatch")
+            raise ValueError(f"{family} archive checksum mismatch")
         files = {}
         with zipfile.ZipFile(archive) as bundle:
             for style in profile()["styles"]:
-                name = f"Literata-{style}.ttf"
-                data = bundle.read(f"fonts/ttf/{name}")
-                validate_ttf(data, "Literata", style)
+                name = f"{family}-{style}.ttf"
+                prefix = "fonts/ttf/" if family == "Literata" else AMAZON_PREFIX + "Bookerly/"
+                data = bundle.read(prefix + name)
+                validate_ttf(data, family, style)
                 files[name] = data
-            files["OFL.txt"] = bundle.read("OFL.txt")
-        save_family("Literata", files, pin)
+            if family == "Literata":
+                files["OFL.txt"] = bundle.read("OFL.txt")
+            else:
+                files[AMAZON_GUIDELINES] = bundle.read(AMAZON_PREFIX + AMAZON_GUIDELINES)
+        save_family(family, files, pin, upgrade_import=upgrade_import)
+
+
+def fetch_literata():
+    fetch_family("Literata")
 
 
 def import_bookerly(directory):
-    """Import user-supplied files; do not download or redistribute Amazon fonts."""
+    """Optional offline import of user-supplied fonts instead of the official download."""
     files = {}
     for style in profile()["styles"]:
         name = f"Bookerly-{style}.ttf"
@@ -127,14 +158,16 @@ def prepared_files(families=None):
         base = CACHE / family
         manifest = base / "manifest.json"
         if not manifest.is_file():
-            raise ValueError(f"Missing {family}; run fonts.py " +
-                             ("fetch-literata" if family == "Literata" else "import-bookerly FONT_DIRECTORY"))
+            raise ValueError(f"Missing {family}; run fonts.py fetch")
         meta = json.loads(manifest.read_text())
-        if family == "Literata" and meta["source"] != config["literata"]:
-            raise ValueError("Cached Literata does not match the pinned release")
+        imported = family == "Bookerly" and isinstance(meta["source"], str)
+        if not imported and meta["source"] != config[family.lower()]:
+            raise ValueError(f"Cached {family} does not match the pinned release")
         names = [f"{family}-{style}.ttf" for style in config["styles"]]
         if family == "Literata":
             names.append("OFL.txt")
+        elif not imported:
+            names.append(AMAZON_GUIDELINES)
         if set(meta["files"]) != set(names):
             raise ValueError(f"Incomplete {family} manifest")
         for name in names:
@@ -227,6 +260,8 @@ def install(target, device="koreader", check=False, families=None, backup_root=N
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
+    commands.add_parser("fetch", help="Fetch both pinned official releases; reuse verified cache offline")
+    commands.add_parser("fetch-bookerly", help="Fetch Amazon's official fonts and bundled usage guidelines")
     commands.add_parser("fetch-literata", help="Fetch and verify the official static TTF release")
     importer = commands.add_parser("import-bookerly", help="Privately cache four user-supplied static TTFs")
     importer.add_argument("directory", type=Path)
@@ -239,8 +274,11 @@ def main(argv=None):
     args = parser.parse_args(argv)
     os.umask(0o077)
     try:
-        if args.action == "fetch-literata":
-            fetch_literata()
+        if args.action == "fetch":
+            for family in profile()["families"]:
+                fetch_family(family)
+        elif args.action in ("fetch-literata", "fetch-bookerly"):
+            fetch_family(args.action.removeprefix("fetch-").capitalize())
         elif args.action == "import-bookerly":
             import_bookerly(args.directory)
         elif not install(args.target, args.device, args.check, args.family):

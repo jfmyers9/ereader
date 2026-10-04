@@ -170,6 +170,78 @@ class FontTests(unittest.TestCase):
                 fonts.fetch_literata()
             self.assertFalse((fonts.CACHE / "Literata").exists())
 
+    def bookerly_archive(self, variant=False, guidelines=True):
+        archive = self.root / "amazon.zip"
+        with zipfile.ZipFile(archive, "w") as bundle:
+            for style in fonts.profile()["styles"]:
+                data = ttf("Bookerly", style) + (b"different version" if variant else b"")
+                bundle.writestr(f"{fonts.AMAZON_PREFIX}Bookerly/Bookerly-{style}.ttf", data)
+            if guidelines:
+                bundle.writestr(fonts.AMAZON_PREFIX + fonts.AMAZON_GUIDELINES, b"usage guidelines")
+            bundle.writestr("../../should-not-extract", b"unmanaged")
+        config = fonts.profile()
+        config["bookerly"]["sha256"] = fonts.sha(archive.read_bytes())
+
+        def download(command, **kwargs):
+            Path(command[command.index("--output") + 1]).write_bytes(archive.read_bytes())
+
+        return config, download
+
+    def test_official_bookerly_fresh_fetch_and_offline_reuse(self):
+        config, download = self.bookerly_archive()
+        with patch.object(fonts, "CACHE", self.root / "fresh"), \
+                patch.object(fonts, "profile", return_value=config), \
+                patch.object(fonts.subprocess, "run", side_effect=download) as network:
+            fonts.fetch_family("Bookerly")
+            fonts.fetch_family("Bookerly")
+            network.assert_called_once()
+            self.assertEqual(len(fonts.prepared_files(["Bookerly"])), 5)
+            self.assertFalse((self.root / "should-not-extract").exists())
+            for device, folder in (("koreader", "fonts"), ("x4pro", ".fonts")):
+                self.install(device=device, families=["Bookerly"])
+                self.assertEqual((self.target / folder / "Bookerly" / fonts.AMAZON_GUIDELINES).read_bytes(),
+                                 b"usage guidelines")
+
+    def test_matching_private_import_adopts_official_pin(self):
+        config, download = self.bookerly_archive()
+        with patch.object(fonts, "profile", return_value=config), \
+                patch.object(fonts.subprocess, "run", side_effect=download) as network:
+            fonts.fetch_family("Bookerly")
+            fonts.fetch_family("Bookerly")
+            network.assert_called_once()
+            meta = json.loads((self.cache / "Bookerly/manifest.json").read_text())
+            self.assertEqual(meta["source"], config["bookerly"])
+            self.assertEqual(len(fonts.prepared_files(["Bookerly"])), 5)
+
+    def test_different_private_import_is_preserved(self):
+        before = (self.cache / "Bookerly/manifest.json").read_bytes()
+        config, download = self.bookerly_archive(variant=True)
+        with patch.object(fonts, "profile", return_value=config), \
+                patch.object(fonts.subprocess, "run", side_effect=download):
+            with self.assertRaisesRegex(ValueError, "Different cached"):
+                fonts.fetch_family("Bookerly")
+        self.assertEqual((self.cache / "Bookerly/manifest.json").read_bytes(), before)
+        self.assertFalse((self.cache / "Bookerly" / fonts.AMAZON_GUIDELINES).exists())
+
+    def test_bookerly_guidelines_required(self):
+        config, download = self.bookerly_archive(guidelines=False)
+        with patch.object(fonts, "CACHE", self.root / "fresh"), \
+                patch.object(fonts, "profile", return_value=config), \
+                patch.object(fonts.subprocess, "run", side_effect=download):
+            with self.assertRaises(KeyError):
+                fonts.fetch_family("Bookerly")
+            self.assertFalse((fonts.CACHE / "Bookerly").exists())
+
+    def test_bookerly_checksum_failure_preserves_import(self):
+        before = (self.cache / "Bookerly/manifest.json").read_bytes()
+        config, download = self.bookerly_archive()
+        config["bookerly"]["sha256"] = "0" * 64
+        with patch.object(fonts, "profile", return_value=config), \
+                patch.object(fonts.subprocess, "run", side_effect=download):
+            with self.assertRaisesRegex(ValueError, "checksum"):
+                fonts.fetch_family("Bookerly")
+        self.assertEqual((self.cache / "Bookerly/manifest.json").read_bytes(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

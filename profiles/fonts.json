@@ -2,6 +2,11 @@
   "schema": 1,
   "families": ["Bookerly", "Literata"],
   "styles": ["Regular", "Bold", "Italic", "BoldItalic"],
+  "bookerly": {
+    "version": "Mar2020",
+    "url": "https://m.media-amazon.com/images/G/01/mobile-apps/dex/alexa/branding/Amazon_Typefaces_Complete_Font_Set_Mar2020.zip",
+    "sha256": "7d41839edb43b49acb8409604f88c26f3e1b7c642fb712ff04ec62c951e88cd9"
+  },
   "literata": {
     "version": "3.103",
     "url": "https://github.com/googlefonts/literata/releases/download/3.103/3.103.zip",
