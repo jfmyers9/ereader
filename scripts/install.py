@@ -2,6 +2,7 @@
 """Reconcile managed setup files with an existing, mounted KOReader installation."""
 
 import argparse
+import json
 from datetime import datetime, timezone
 import os
 from pathlib import Path
@@ -18,7 +19,8 @@ FILES = (
 )
 
 
-def install(target, userspace_proxy=False, backup_root=None, kindle=False, check=False, bookorbit=False):
+def install(target, userspace_proxy=False, backup_root=None, kindle=False, check=False, bookorbit=False,
+            settings_profile=None):
     target = Path(target).resolve()
     source = ROOT / "koreader-tailscale"
     if not (target / "plugins").is_dir():
@@ -47,7 +49,7 @@ def install(target, userspace_proxy=False, backup_root=None, kindle=False, check
             raise ValueError("Existing BookOrbit provisioning file requires manual review before installation")
         desired.extend((path, bookorbit_dir / name, False)
                        for name, path in bookorbit_source.prepared_files())
-    if userspace_proxy:
+    if userspace_proxy and settings_profile != "kindle":
         if settings.exists():
             print("Existing Tailscale settings preserved; the profile is seed-only.")
         else:
@@ -75,11 +77,20 @@ def install(target, userspace_proxy=False, backup_root=None, kindle=False, check
                 or original.read_bytes() != destination.read_bytes()
                 or (executable and not destination.stat().st_mode & 0o111)):
             changed.append((original, destination, executable))
-    if not changed:
+    settings_changes = []
+    if settings_profile:
+        from scripts import settings as settings_source
+
+        settings_changes = settings_source.plan(target, settings_profile)
+    if not changed and not settings_changes:
         print(f"Managed files already up to date ({revision}); no writes or backup needed.")
         return None
     for _, destination, _ in changed:
         print(f"{'Would update' if check else 'Update'}: {destination}")
+    for change in settings_changes:
+        print(f"{'Would merge' if check else 'Merge'}: {change.path}")
+        for key in change.keys:
+            print(f"  {key}")
     if check:
         return False
 
@@ -94,7 +105,8 @@ def install(target, userspace_proxy=False, backup_root=None, kindle=False, check
     backup_paths = ["plugins/tailscale.koplugin", "settings/tailscale.lua", "settings.reader.lua"]
     if bookorbit:
         backup_paths += ["plugins/bookorbit.koplugin", "settings/bookorbit_sync_state.lua"]
-    for relative in backup_paths:
+    backup_paths += [change.path.relative_to(target).as_posix() for change in settings_changes]
+    for relative in dict.fromkeys(backup_paths):
         original = target / relative
         if original.exists():
             saved = backup / relative
@@ -113,14 +125,24 @@ def install(target, userspace_proxy=False, backup_root=None, kindle=False, check
         f"Kindle launcher managed: {kindle}\n"
         f"Previous Kindle launcher existed: {launcher is not None and launcher.exists()}\n"
         f"BookOrbit managed: {bookorbit}\n"
+        f"Settings profile: {settings_profile or 'none'}\n"
     )
+    if settings_changes:
+        (backup / "settings-profile-files.json").write_text(json.dumps({
+            change.path.relative_to(target).as_posix(): {"existed": change.before is not None}
+            for change in settings_changes
+        }, indent=2) + "\n")
     print(f"Backup: {backup}", flush=True)
 
+    for change in settings_changes:
+        change.verify_unchanged()
     # Explicit code-only overlay: never delete runtime files or copy repo metadata.
     for original, destination, executable in changed:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(original, destination)
         destination.chmod(0o755 if executable else 0o644)
+    for change in settings_changes:
+        change.write()
     print(f"Installed {revision}. Safely eject, restart KOReader, and verify connectivity.")
     return backup
 
@@ -134,6 +156,8 @@ if __name__ == "__main__":
                         help="Also install the optional KMC no-framework scriptlet")
     parser.add_argument("--bookorbit", action="store_true",
                         help="Also install the verified public BookOrbit plugin pin (fetch first)")
+    parser.add_argument("--settings-profile", choices=("shared", "kindle"),
+                        help="Merge curated preferences; kindle includes shared defaults (requires LuaJIT)")
     parser.add_argument("--check", action="store_true",
                         help="Read-only drift check: exit 0 if current, 1 if updates needed")
     args = parser.parse_args()
@@ -141,8 +165,9 @@ if __name__ == "__main__":
     os.umask(0o077)
     try:
         result = install(args.koreader_dir, args.userspace_proxy,
-                         kindle=args.kindle, check=args.check, bookorbit=args.bookorbit)
-    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+                         kindle=args.kindle, check=args.check, bookorbit=args.bookorbit,
+                         settings_profile=args.settings_profile)
+    except (ValueError, OSError, subprocess.SubprocessError) as error:
         parser.exit(2, f"Error: {error}\n")
     if result is False:
         parser.exit(1)

@@ -33,21 +33,23 @@ because mounted FAT storage does not preserve ordinary Unix permissions.
 "Up to date" means matching the checked-out plugin revision and this repo's
 managed files, not the latest online release. Installation never fetches, pulls,
 upgrades KOReader, or downloads Tailscale binaries. Update the submodule
-deliberately using the workflow below. Existing settings remain user-owned:
-the profile flag seeds missing settings, not enforces or audits their values.
+deliberately using the workflow below. By default existing settings remain
+user-owned: `--userspace-proxy` only seeds missing settings. The separate
+`--settings-profile` option below explicitly manages selected preferences.
 
 Pass any mounted KOReader directory containing `plugins/`; nothing in the
 installer hardcodes Kindle paths. For Kobo, this is typically the mounted
 volume's `.adds/koreader` directory. On devices with separate KOReader data
 and settings directories, configure settings through the device UI instead
-of using the profile flag. This script operates on locally accessible files,
+of using either settings option. This script operates on locally accessible files,
 not SSH or MTP destinations.
 
 `--userspace-proxy` seeds the optional profile only when `settings/tailscale.lua`
 does not exist. It forces userspace networking and automatically manages
 KOReader's HTTP proxy. My Kindle PW5 needed this because kernel TUN behaved
-incorrectly; omit the flag on devices that do not need it. Existing settings
-are never overwritten; enable those options in the plugin menu if needed.
+incorrectly; omit the flag on devices that do not need it. This seed-only option
+does not overwrite existing settings; enable those options in the plugin menu
+or opt into the curated Kindle settings profile if needed.
 Wi-Fi remains independent; the old combined network-stack toggle is not installed.
 
 When changes are needed, the installer backs up the existing plugin, its settings,
@@ -64,6 +66,66 @@ Safely eject and restart KOReader. For a first-time install, select
 installations normally retain their binaries and identity. Verify a tailnet
 service actually works; copying files alone does not test device networking.
 Any gesture bound to the removed combined toggle must be rebound on the device.
+
+## Curated KOReader preferences
+
+The optional settings profiles capture my preferences without committing a
+device's entire `settings.reader.lua`:
+
+- `profiles/koreader/shared/`: typography, margins, footnotes/style tweaks,
+  footer layout, cover screensaver, reading-statistics preferences, and BookOrbit
+  catalog/sync preferences. Bookerly must be installed separately; no font is
+  bundled here.
+- `profiles/koreader/kindle/`: layers on the shared profile with touch gestures,
+  frontlight actions, a 15-minute suspend timeout, `/mnt/us/Books` paths, and
+  Tailscale userspace/automatic proxy settings. Bottom-left hold toggles the
+  supported Tailscale VPN action; bottom-right hold in the reader syncs BookOrbit.
+
+Requires **host LuaJIT**, in addition to Python/Git (`brew install luajit` on
+macOS). Quit KOReader before applying changes so it cannot save over them.
+
+```sh
+# Preview preferences and launcher/code drift, without writing anything.
+python3 scripts/install.py /Volumes/Kindle/koreader --kindle --settings-profile kindle --check
+# Apply after reviewing the key names shown by the preview.
+python3 scripts/install.py /Volumes/Kindle/koreader --kindle --settings-profile kindle
+```
+
+Use `--settings-profile shared` for another KOReader device with its settings
+stored under the supplied KOReader directory. Profiles are explicit: neither
+`--kindle` nor ordinary plugin installation opts you into preference management.
+Add `--bookorbit` after fetching its pin if you also want its plugin code updated.
+The Kindle settings profile replaces the need for the seed-only
+`--userspace-proxy` flag: it manages those two Tailscale preferences even in an
+existing settings file. It leaves the live global HTTP proxy to the plugin.
+
+Profile files mirror their destinations and contain `set` tables (merge only
+listed leaves), optional `seed` tables (fill only missing leaves), and optional
+`remove` lists (explicit key paths). The only current removals are the obsolete
+`toggle_tailscale_network` gesture actions. The shared profile seeds BookOrbit's
+initial schema marker, preventing its first-run migration from discarding the
+selected preferences; existing schema markers are preserved.
+
+These are enforced preferences, not first-run suggestions: applying a profile
+restores its selected values. Unlisted keys, nested settings, credentials,
+device identity, reading history, location/warmth schedule, and per-book
+overrides remain device-owned. BookOrbit's menu ordering is left to the plugin.
+Settings files are parsed in a restricted Lua environment with an instruction
+limit. Unsupported/corrupt data, symlinks, and a missing primary file with an
+existing `.old` recovery file cause an error rather than a reset.
+
+`--check` reports managed key names without printing values. An already-matching
+profile creates no writes or backup. A real change backs up every affected
+settings file locally, then replaces complete files atomically. Other values
+are preserved, but formatting/comments in changed files are normalized. The
+installer detects settings changed since planning; multiple files are not a
+single atomic transaction, so keep KOReader stopped throughout.
+
+Restore affected files from the printed backup path to undo the merge.
+`settings-profile-files.json` in that backup records whether each changed file
+previously existed; remove a newly created file instead of restoring it. Review
+before restoring whole settings files, which also rolls back unrelated changes
+made since the backup. Backups contain private device state and stay Git-ignored.
 
 ## Kindle no-framework launcher
 
@@ -175,7 +237,8 @@ not tar metadata. Modified caches and credential-provisioning files are rejected
 
 The installer backs up the plugin, `settings.reader.lua`, and
 `settings/bookorbit_sync_state.lua` on the computer before changes. Existing
-login, settings, sync state, and unrelated plugin files remain untouched. This
+login, sync state, and unrelated plugin files remain untouched. Preferences
+also remain untouched unless `--settings-profile` is explicitly selected. This
 is a code overlay, not a directory mirror: unrecognized/obsolete files are not
 deleted or reported as drift. As with the other plugins, a matching install
 causes no writes or new backup. Restore those backup paths to roll back; a first
