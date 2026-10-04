@@ -149,33 +149,34 @@ def install(target, userspace_proxy=False, backup_root=None, kindle=False, check
     return backup
 
 
-if __name__ == "__main__":
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("koreader_dir", type=Path, help="Mounted KOReader directory")
     parser.add_argument("--userspace-proxy", action="store_true",
                         help="Seed userspace/proxy settings only if no settings exist")
     parser.add_argument("--kindle", action="store_true",
-                        help="Also install the optional KMC no-framework scriptlet")
+                        help="Also install the KMC scriptlet; with --fonts, rely on system Bookerly")
     parser.add_argument("--bookorbit", action="store_true",
                         help="Also install the verified public BookOrbit plugin pin (fetch first)")
     parser.add_argument("--dictionaries", action="store_true",
                         help="Also install cached dictionary pins and preferences (dictionaries.py fetch first)")
     parser.add_argument("--fonts", action="store_true",
-                        help="Require and install cached Bookerly and Literata (prepare with fonts.py first)")
+                        help="Install cached fonts; Kindle flag/profile skips system-provided Bookerly")
     parser.add_argument("--settings-profile", choices=("shared", "kindle"),
                         help="Merge curated preferences; kindle includes shared defaults (requires LuaJIT)")
     parser.add_argument("--check", action="store_true",
                         help="Read-only drift check: exit 0 if current, 1 if updates needed")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     # Restrict permissions on backups, including copied credentials.
     os.umask(0o077)
     try:
         font_result = None
+        font_device = "kindle" if args.kindle or args.settings_profile == "kindle" else "koreader"
         if args.fonts:
             from scripts import fonts
 
             # Fail on missing fonts before touching plugins or settings.
-            font_result = fonts.install(args.koreader_dir, check=True)
+            font_result = fonts.install(args.koreader_dir, device=font_device, check=True)
         dictionary_result = None
         if args.dictionaries:
             from scripts import dictionaries
@@ -190,10 +191,14 @@ if __name__ == "__main__":
             dictionaries.install(args.koreader_dir)
             dictionary_result = None
         if args.fonts and not args.check:
-            fonts.install(args.koreader_dir)
+            fonts.install(args.koreader_dir, device=font_device)
             font_result = None
     except (ValueError, OSError, KeyError, subprocess.SubprocessError,
             tarfile.TarError, zipfile.BadZipFile) as error:
         parser.exit(2, f"Error: {error}\n")
     if result is False or dictionary_result is False or font_result is False:
         parser.exit(1)
+
+
+if __name__ == "__main__":
+    main()

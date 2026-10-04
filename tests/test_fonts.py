@@ -9,6 +9,7 @@ from unittest.mock import patch
 import zipfile
 
 from scripts import fonts
+from scripts import install as setup
 
 
 def ttf(family, style, variable=False):
@@ -76,6 +77,52 @@ class FontTests(unittest.TestCase):
         (self.cache / "Bookerly/manifest.json").unlink()
         self.assertTrue(self.install(families=["Literata"]))
         self.assertFalse((self.target / "fonts/Bookerly").exists())
+
+    def test_kindle_needs_no_bookerly_cache_and_preserves_existing_copy(self):
+        (self.cache / "Bookerly/manifest.json").unlink()
+        existing = self.target / "fonts/Bookerly/Bookerly-Regular.ttf"
+        existing.parent.mkdir(parents=True)
+        existing.write_bytes(b"existing user copy")
+        self.assertFalse(self.install(device="kindle", check=True))
+        self.assertFalse(self.backups.exists())
+        self.assertTrue(self.install(device="kindle"))
+        self.assertTrue(self.install(device="kindle", check=True))
+        self.assertEqual(existing.read_bytes(), b"existing user copy")
+        self.assertEqual(list(existing.parent.iterdir()), [existing])
+        backup = next(self.backups.iterdir())
+        records = json.loads((backup / "fonts.json").read_text())["files"]
+        self.assertTrue(all(name.startswith("fonts/Literata/") for name in records))
+
+    def test_kindle_does_not_create_bookerly_folder(self):
+        self.install(device="kindle")
+        self.assertFalse((self.target / "fonts/Bookerly").exists())
+        self.assertFalse((self.target / ".fonts").exists())
+
+    def test_kindle_rejects_explicit_bookerly_and_requires_koreader(self):
+        with self.assertRaisesRegex(ValueError, "system Bookerly"):
+            self.install(device="kindle", families=["Bookerly"])
+        (self.target / "plugins").rmdir()
+        with self.assertRaisesRegex(ValueError, "KOReader"):
+            self.install(device="kindle")
+
+    def test_setup_selects_kindle_fonts_for_flag_or_profile(self):
+        for options, device in (([], "koreader"), (["--kindle"], "kindle"),
+                                (["--settings-profile", "kindle"], "kindle"),
+                                (["--settings-profile", "shared"], "koreader")):
+            with self.subTest(options=options), patch.object(fonts, "install", return_value=True) as provision, \
+                    patch.object(setup, "install"), patch.object(setup.os, "umask"):
+                setup.main([str(self.target), "--fonts", *options])
+                self.assertEqual(provision.call_count, 2)
+                self.assertEqual(provision.call_args_list[0].kwargs, {"device": device, "check": True})
+                self.assertEqual(provision.call_args_list[1].kwargs, {"device": device})
+
+    def test_setup_kindle_check_never_installs_fonts(self):
+        with patch.object(fonts, "install", return_value=False) as provision, \
+                patch.object(setup, "install"), patch.object(setup.os, "umask"):
+            with self.assertRaises(SystemExit) as error:
+                setup.main([str(self.target), "--fonts", "--kindle", "--check"])
+            self.assertEqual(error.exception.code, 1)
+            provision.assert_called_once_with(self.target, device="kindle", check=True)
 
     def test_corruption_rejected(self):
         (self.cache / "Literata/Literata-Regular.ttf").write_bytes(b"bad")

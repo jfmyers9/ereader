@@ -191,12 +191,17 @@ def install(target, device="koreader", check=False, families=None, backup_root=N
     if target.is_symlink():
         raise ValueError("Target must not be a symlink")
     target = target.resolve()
-    if device not in ("koreader", "x4pro"):
-        raise ValueError("Expected koreader or x4pro")
-    if not target.is_dir() or (device == "koreader" and not (target / "plugins").is_dir()):
+    if device not in ("koreader", "kindle", "x4pro"):
+        raise ValueError("Expected koreader, kindle or x4pro")
+    if not target.is_dir() or (device != "x4pro" and not (target / "plugins").is_dir()):
         raise ValueError("Expected an existing KOReader directory (plugins/) or mounted X4 Pro SD root")
+    if device == "kindle":
+        if families and "Bookerly" in families:
+            raise ValueError("Kindle mode uses system Bookerly; use --device koreader to install a separate copy")
+        families = families or ["Literata"]
+        print("Kindle: using system Bookerly (assumed available); installing/checking Literata only.")
     sources = prepared_files(families)
-    font_root = target / ("fonts" if device == "koreader" else ".fonts")
+    font_root = target / (".fonts" if device == "x4pro" else "fonts")
     if font_root.is_relative_to(CACHE.resolve()) or CACHE.resolve().is_relative_to(font_root):
         raise ValueError("Font destination overlaps the source cache")
     changes = []
@@ -267,7 +272,8 @@ def main(argv=None):
     importer.add_argument("directory", type=Path)
     installer = commands.add_parser("install", help="Offline install; both families required by default")
     installer.add_argument("target", type=Path)
-    installer.add_argument("--device", choices=("koreader", "x4pro"), required=True)
+    installer.add_argument("--device", choices=("koreader", "kindle", "x4pro"), required=True,
+                           help="kindle installs Literata only and relies on system Bookerly")
     installer.add_argument("--family", choices=("Bookerly", "Literata"), action="append",
                            help="Explicit partial install instead of the guaranteed two-family set")
     installer.add_argument("--check", action="store_true", help="Read-only: exit 1 for drift, 2 for errors")

@@ -69,8 +69,9 @@ Any gesture bound to the removed combined toggle must be rebound on the device.
 
 ## Shared fonts: Bookerly and Literata
 
-`scripts/fonts.py` manages the same four **static TTF** styles (regular, bold,
-italic, bold italic) for both readers. `profiles/fonts.json` defines the set and
+`scripts/fonts.py` manages four **static TTF** styles (regular, bold,
+italic, bold italic) for both readers. Kindle mode relies on system Bookerly
+and installs only Literata; other devices get both. `profiles/fonts.json` defines the set and
 pins the official Literata 3.103 and Amazon March 2020 releases by SHA-256. Requirements: Python 3.9+
 and `curl` for the initial download; no font-conversion dependencies.
 
@@ -120,25 +121,35 @@ Install offline, with the reader stopped and storage mounted:
 
 ```sh
 # KOReader directory, not Kindle storage root
-python3 scripts/fonts.py install /Volumes/Kindle/koreader --device koreader --check
-python3 scripts/fonts.py install /Volumes/Kindle/koreader --device koreader
+python3 scripts/fonts.py install /Volumes/Kindle/koreader --device kindle --check
+python3 scripts/fonts.py install /Volumes/Kindle/koreader --device kindle
 
 # X4 Pro SD root — substitute its actual mount path
 python3 scripts/fonts.py install /Volumes/X4PRO --device x4pro --check
 python3 scripts/fonts.py install /Volumes/X4PRO --device x4pro
 
-# Or include both families in the existing KOReader setup command
-python3 scripts/install.py /Volumes/Kindle/koreader --fonts --check
-python3 scripts/install.py /Volumes/Kindle/koreader --fonts
+# Or include fonts in the existing Kindle setup (also installs the KMC launcher)
+python3 scripts/install.py /Volumes/Kindle/koreader --kindle --fonts --check
+python3 scripts/install.py /Volumes/Kindle/koreader --kindle --fonts
 ```
 
-By default **both families and all four styles are required**: missing or corrupt
+`--device kindle` assumes KOReader can already use the Kindle's system Bookerly.
+It does not probe that system partition, require Bookerly in the host cache,
+copy it, or remove any previously installed copy. Only Literata is checked and
+installed; for a Kindle-only host, `fetch-literata` is sufficient preparation.
+`install.py --fonts` selects this behavior when either `--kindle` or
+`--settings-profile kindle` is supplied. Use the standalone command for font-only
+changes without installing the launcher or applying settings.
+
+For generic KOReader (`--device koreader`) and X4 Pro,
+**both families and all four styles are required**: missing or corrupt
 sources fail before font writes, rather than silently falling back. To try only
 Literata alone, explicitly add `--family Literata` to the
 standalone installer. This is a partial install, not the guaranteed full set.
 Existing setup commands without `--fonts` retain their previous behavior.
 
-KOReader gets `fonts/Bookerly/` and `fonts/Literata/`; CrossPoint gets
+Generic KOReader gets `fonts/Bookerly/` and `fonts/Literata/`; Kindle mode only
+adds `fonts/Literata/`. CrossPoint gets
 `.fonts/Bookerly/` and `.fonts/Literata/`. The pinned CrossPoint checkout supports
 direct TTF loading on the PSRAM-equipped X4 Pro; older firmware may need an
 explicit build/flash first. This does **not** apply to the original X4/C3, which
@@ -170,7 +181,8 @@ device's entire `settings.reader.lua`:
 - `profiles/koreader/shared/`: typography, margins, footnotes/style tweaks,
   footer layout, cover screensaver, reading-statistics preferences, and BookOrbit
   catalog/sync preferences. Use `--fonts` after preparing the shared font library
-  above to guarantee Bookerly and Literata are installed; no font is bundled here.
+  above to install the required fonts (Kindle mode relies on system Bookerly);
+  no font is bundled here.
 - `profiles/koreader/kindle/`: layers on the shared profile with touch gestures,
   frontlight actions, a 15-minute suspend timeout, `/mnt/us/Books` paths, and
   Tailscale userspace/automatic proxy settings. Bottom-left hold toggles the
