@@ -447,11 +447,17 @@ This workflow never merges upstream or drops my personal features.
 
 ### Prepare and build
 
-The pinned revision `26b6631f` includes upstream `develop` through `50823ffa`
-alongside the personal changes and touch-selection exit fixes. The `x4pro`
-build uses pioarduino 6.1.19. Build, flashing, boot, and home-screen checks
-succeeded with the earlier `61632828` revision; individual features still
-need on-device smoke tests.
+The pinned revision `e62f8fec` includes upstream `develop` through `50823ffa`
+alongside the personal changes, touch-selection exit fixes, and BookOrbit
+highlight export. The `x4pro` build uses pioarduino 6.1.19. The build and focused
+host tests pass; highlight interoperability still needs a live smoke test.
+
+With BookOrbit configured, **Sync Progress** also exports the current EPUB's
+highlights and label edits. Export is one-way and additive, with persistent
+retry identities; it neither downloads highlights nor propagates deletions.
+Unresolvable highlights stay local without blocking progress sync. See the
+[firmware user guide](crosspoint-reader/USER_GUIDE.md#bookorbit-highlight-export-personal-x4-pro-build)
+for limits and backup requirements.
 
 ```sh
 git submodule update --init --recursive
