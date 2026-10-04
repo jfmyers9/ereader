@@ -5,3 +5,6 @@
 	path = crosspoint-reader
 	url = git@github.com:jfmyers9/crosspoint-reader.git
 	branch = personal/develop
+[submodule "koassistant.koplugin"]
+	path = koassistant.koplugin
+	url = https://github.com/zeeyado/koassistant.koplugin.git
