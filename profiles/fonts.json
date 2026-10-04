@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "families": ["Bookerly", "Literata"],
+  "styles": ["Regular", "Bold", "Italic", "BoldItalic"],
+  "literata": {
+    "version": "3.103",
+    "url": "https://github.com/googlefonts/literata/releases/download/3.103/3.103.zip",
+    "sha256": "f7fb973cafb26cf785cbebaeaf51c18f87c15a3bcf4d82a7d4857564db5b056d"
+  }
+}

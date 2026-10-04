@@ -160,6 +160,8 @@ if __name__ == "__main__":
                         help="Also install the verified public BookOrbit plugin pin (fetch first)")
     parser.add_argument("--dictionaries", action="store_true",
                         help="Also install cached dictionary pins and preferences (dictionaries.py fetch first)")
+    parser.add_argument("--fonts", action="store_true",
+                        help="Require and install cached Bookerly and Literata (prepare with fonts.py first)")
     parser.add_argument("--settings-profile", choices=("shared", "kindle"),
                         help="Merge curated preferences; kindle includes shared defaults (requires LuaJIT)")
     parser.add_argument("--check", action="store_true",
@@ -168,6 +170,12 @@ if __name__ == "__main__":
     # Restrict permissions on backups, including copied credentials.
     os.umask(0o077)
     try:
+        font_result = None
+        if args.fonts:
+            from scripts import fonts
+
+            # Fail on missing fonts before touching plugins or settings.
+            font_result = fonts.install(args.koreader_dir, check=True)
         dictionary_result = None
         if args.dictionaries:
             from scripts import dictionaries
@@ -181,8 +189,11 @@ if __name__ == "__main__":
         if args.dictionaries and not args.check:
             dictionaries.install(args.koreader_dir)
             dictionary_result = None
+        if args.fonts and not args.check:
+            fonts.install(args.koreader_dir)
+            font_result = None
     except (ValueError, OSError, KeyError, subprocess.SubprocessError,
             tarfile.TarError, zipfile.BadZipFile) as error:
         parser.exit(2, f"Error: {error}\n")
-    if result is False or dictionary_result is False:
+    if result is False or dictionary_result is False or font_result is False:
         parser.exit(1)

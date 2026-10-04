@@ -67,6 +67,81 @@ installations normally retain their binaries and identity. Verify a tailnet
 service actually works; copying files alone does not test device networking.
 Any gesture bound to the removed combined toggle must be rebound on the device.
 
+## Shared fonts: Bookerly and Literata
+
+`scripts/fonts.py` manages the same four **static TTF** styles (regular, bold,
+italic, bold italic) for both readers. `profiles/fonts.json` defines the set and
+pins the official Literata 3.103 release by SHA-256. Requirements: Python 3.9+
+and `curl` for the initial download; no font-conversion dependencies.
+
+Prepare the host library once:
+
+```sh
+python3 scripts/fonts.py fetch-literata
+python3 scripts/fonts.py import-bookerly /path/to/private/bookerly
+```
+
+The Bookerly directory must contain `Bookerly-Regular.ttf`, `Bookerly-Bold.ttf`,
+`Bookerly-Italic.ttf`, and `Bookerly-BoldItalic.ttf`. Bookerly is proprietary:
+provide your own lawfully obtained copy and confirm your license permits its use
+on the intended device. Kindle system fonts may live under `/usr/java/lib/fonts`
+(not the USB-visible storage); this tool does not extract them or download fonts
+from unofficial mirrors. KOReader discovering a system copy does not populate
+this portable library. Font binaries and import checksums stay in gitignored
+`.local/fonts/`; do not commit or redistribute that private directory.
+
+Literata's OFL license travels with its files. The official release supplies
+static fonts, so neither device needs variable-font handling or conversion.
+Preparation validates family/style metadata; installs recheck cached hashes.
+An existing import is not silently replaced: move its cache folder aside if
+you intentionally want to import a different version.
+
+Install offline, with the reader stopped and storage mounted:
+
+```sh
+# KOReader directory, not Kindle storage root
+python3 scripts/fonts.py install /Volumes/Kindle/koreader --device koreader --check
+python3 scripts/fonts.py install /Volumes/Kindle/koreader --device koreader
+
+# X4 Pro SD root — substitute its actual mount path
+python3 scripts/fonts.py install /Volumes/X4PRO --device x4pro --check
+python3 scripts/fonts.py install /Volumes/X4PRO --device x4pro
+
+# Or include both families in the existing KOReader setup command
+python3 scripts/install.py /Volumes/Kindle/koreader --fonts --check
+python3 scripts/install.py /Volumes/Kindle/koreader --fonts
+```
+
+By default **both families and all four styles are required**: missing or corrupt
+sources fail before font writes, rather than silently falling back. To try only
+Literata before sourcing Bookerly, explicitly add `--family Literata` to the
+standalone installer. This is a partial install, not the guaranteed full set.
+Existing setup commands without `--fonts` retain their previous behavior.
+
+KOReader gets `fonts/Bookerly/` and `fonts/Literata/`; CrossPoint gets
+`.fonts/Bookerly/` and `.fonts/Literata/`. The pinned CrossPoint checkout supports
+direct TTF loading on the PSRAM-equipped X4 Pro; older firmware may need an
+explicit build/flash first. This does **not** apply to the original X4/C3, which
+needs converted `.cpfont` files. See
+[CrossPoint's font documentation](crosspoint-reader/docs/sd-card-fonts.md).
+The installer refuses `.cpfont` conflicts in its managed family folders because
+CrossPoint gives those priority over TTFs. Its hidden `.fonts` families take
+precedence over same-named families in the visible `fonts/` root.
+
+`--check` is read-only: exit 0 means current, 1 means drift, 2 means an error.
+Changed files are backed up under `.local/backups/fonts-*` before replacement;
+unrelated fonts and reading preferences are preserved. Repeat installs are
+no-ops. Each file replacement is atomic, but the whole install (and optional
+plugin/settings setup) is not one transaction. To undo, stop the reader, restore
+files from the printed backup, and remove newly added files marked
+`"existed": false` in its `fonts.json` record.
+
+Safely eject and restart. In KOReader, open an EPUB and select the family in the
+font menu; in CrossPoint use **Settings > Reader > Font Family**. Test normal,
+bold, italic, and bold-italic passages. Installation makes fonts available; it
+does not change the selected family, existing per-book settings, or fonts baked
+into PDFs. The curated KOReader profile still defaults to Bookerly.
+
 ## Curated KOReader preferences
 
 The optional settings profiles capture my preferences without committing a
@@ -74,8 +149,8 @@ device's entire `settings.reader.lua`:
 
 - `profiles/koreader/shared/`: typography, margins, footnotes/style tweaks,
   footer layout, cover screensaver, reading-statistics preferences, and BookOrbit
-  catalog/sync preferences. Bookerly must be installed separately; no font is
-  bundled here.
+  catalog/sync preferences. Use `--fonts` after preparing the shared font library
+  above to guarantee Bookerly and Literata are installed; no font is bundled here.
 - `profiles/koreader/kindle/`: layers on the shared profile with touch gestures,
   frontlight actions, a 15-minute suspend timeout, `/mnt/us/Books` paths, and
   Tailscale userspace/automatic proxy settings. Bottom-left hold toggles the
