@@ -143,6 +143,66 @@ python3 -m unittest discover -s tests
 
 Tests use temporary mock installations, never the mounted e-reader.
 
+## BookOrbit plugin: public code, private device settings
+
+[`profiles/bookorbit.json`](profiles/bookorbit.json) pins the **public** BookOrbit
+release, exact source commit, and SHA-256 of the plugin files. The initial release
+is **3.2.0**, matching the declared Docker image version. This is not a live check
+of the running deployment, and custom image/plugin overrides are not covered.
+
+BookOrbit's Dockerfile copies `koreader-plugin/bookorbit.koplugin/` directly from
+its source. Its public repository's manual installation instructions use that
+same directory. We can therefore fetch the unconfigured plugin at the matching
+public release without access to a deployment, Docker, or a private Compose repo.
+Anyone can reproduce these plugin code files; each reader supplies their own
+server address and credentials on the device.
+
+```sh
+# Fetch the committed revision and verify its checksum; does not change the pin.
+python3 scripts/bookorbit.py fetch
+# Preview the combined Kindle setup without modifying the device.
+python3 scripts/install.py /Volumes/Kindle/koreader --kindle --userspace-proxy --bookorbit --check
+# Apply only after reviewing the proposed changes.
+python3 scripts/install.py /Volumes/Kindle/koreader --kindle --userspace-proxy --bookorbit
+```
+
+Omit `--kindle` for another KOReader device. Fetching requires Git and network
+access on first use; verified cached files work offline. Installation and `--check`
+never fetch implicitly. The public source snapshot and plugin cache live in
+ignored `.local/bookorbit/`; plugin code is not vendored or added as a submodule.
+The checksum covers sorted relative filenames and their file-content hashes,
+not tar metadata. Modified caches and credential-provisioning files are rejected.
+
+The installer backs up the plugin, `settings.reader.lua`, and
+`settings/bookorbit_sync_state.lua` on the computer before changes. Existing
+login, settings, sync state, and unrelated plugin files remain untouched. This
+is a code overlay, not a directory mirror: unrecognized/obsolete files are not
+deleted or reported as drift. As with the other plugins, a matching install
+causes no writes or new backup. Restore those backup paths to roll back; a first
+install can be undone by removing only the newly added plugin directory.
+
+**Do not commit or import a "preconfigured plugin" download.** BookOrbit embeds
+the server URL and credentials in `bookorbit_provision.lua`. This workflow never
+downloads that ZIP and refuses installation if such a file is pending on the
+device. Configure a new reader through Tools → BookOrbit; an existing reader
+keeps its login. No server URLs, account names, secrets, or private-repo content
+are needed in tracked configuration.
+
+When you deliberately update your BookOrbit server, select the matching public
+release here (replace the example version):
+
+```sh
+python3 scripts/bookorbit.py pin 3.2.0
+git diff -- profiles/bookorbit.json
+python3 scripts/install.py /Volumes/Kindle/koreader --bookorbit --check
+```
+
+`pin` resolves that release once, downloads its public source, computes the
+checksum, and updates the lock for review. It does not change the device or
+commit anything. Future installs use the exact commit, even if a release tag
+moves. Avoid the plugin's self-updater if you want it to remain at this repo's
+pin; otherwise the next check will report drift and installation restores the pin.
+
 ## Xteink X4 Pro / personal CrossPoint
 
 `crosspoint-reader/` is a pinned submodule of

@@ -7,16 +7,18 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 FILES = (
     "main.lua", "_meta.lua", "bin/install-tailscale.sh",
     "bin/start_tailscale.sh", "bin/stop_tailscale.sh", "bin/uninstall-tailscale.sh",
 )
 
 
-def install(target, userspace_proxy=False, backup_root=None, kindle=False, check=False):
+def install(target, userspace_proxy=False, backup_root=None, kindle=False, check=False, bookorbit=False):
     target = Path(target).resolve()
     source = ROOT / "koreader-tailscale"
     if not (target / "plugins").is_dir():
@@ -37,6 +39,14 @@ def install(target, userspace_proxy=False, backup_root=None, kindle=False, check
     plugin = target / "plugins/tailscale.koplugin"
     settings = target / "settings/tailscale.lua"
     desired = [(source / name, plugin / name, name.endswith(".sh")) for name in FILES]
+    if bookorbit:
+        from scripts import bookorbit as bookorbit_source
+
+        bookorbit_dir = target / "plugins/bookorbit.koplugin"
+        if (bookorbit_dir / bookorbit_source.PROVISION).exists():
+            raise ValueError("Existing BookOrbit provisioning file requires manual review before installation")
+        desired.extend((path, bookorbit_dir / name, False)
+                       for name, path in bookorbit_source.prepared_files())
     if userspace_proxy:
         if settings.exists():
             print("Existing Tailscale settings preserved; the profile is seed-only.")
@@ -81,7 +91,10 @@ def install(target, userspace_proxy=False, backup_root=None, kindle=False, check
         dir=backup_root,
     ))
     # Finish every backup before writing anything to the device.
-    for relative in ("plugins/tailscale.koplugin", "settings/tailscale.lua", "settings.reader.lua"):
+    backup_paths = ["plugins/tailscale.koplugin", "settings/tailscale.lua", "settings.reader.lua"]
+    if bookorbit:
+        backup_paths += ["plugins/bookorbit.koplugin", "settings/bookorbit_sync_state.lua"]
+    for relative in backup_paths:
         original = target / relative
         if original.exists():
             saved = backup / relative
@@ -99,6 +112,7 @@ def install(target, userspace_proxy=False, backup_root=None, kindle=False, check
         f"Previous tailscale settings existed: {settings.exists()}\n"
         f"Kindle launcher managed: {kindle}\n"
         f"Previous Kindle launcher existed: {launcher is not None and launcher.exists()}\n"
+        f"BookOrbit managed: {bookorbit}\n"
     )
     print(f"Backup: {backup}", flush=True)
 
@@ -118,6 +132,8 @@ if __name__ == "__main__":
                         help="Seed userspace/proxy settings only if no settings exist")
     parser.add_argument("--kindle", action="store_true",
                         help="Also install the optional KMC no-framework scriptlet")
+    parser.add_argument("--bookorbit", action="store_true",
+                        help="Also install the verified public BookOrbit plugin pin (fetch first)")
     parser.add_argument("--check", action="store_true",
                         help="Read-only drift check: exit 0 if current, 1 if updates needed")
     args = parser.parse_args()
@@ -125,7 +141,7 @@ if __name__ == "__main__":
     os.umask(0o077)
     try:
         result = install(args.koreader_dir, args.userspace_proxy,
-                         kindle=args.kindle, check=args.check)
+                         kindle=args.kindle, check=args.check, bookorbit=args.bookorbit)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.exit(2, f"Error: {error}\n")
     if result is False:
