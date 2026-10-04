@@ -7,4 +7,4 @@
 	branch = personal/develop
 [submodule "koassistant.koplugin"]
 	path = koassistant.koplugin
-	url = https://github.com/zeeyado/koassistant.koplugin.git
+	url = https://github.com/jfmyers9/koassistant.koplugin.git
