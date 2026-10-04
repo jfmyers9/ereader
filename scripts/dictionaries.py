@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch pinned dictionaries on the host and install them over USB, not Kindle Wi-Fi."""
+"""Fetch pinned dictionaries and install them over USB for KOReader or CrossPoint."""
 
 import argparse
 from datetime import datetime, timezone
@@ -161,12 +161,47 @@ def safe_destination(path):
         raise ValueError(f"Expected a regular file: {path}")
 
 
-def install(target, check=False, preferences=True, backup_root=None):
+def crosspoint_folder(target, pin, prepared):
+    """Reject layouts that CrossPoint would skip or resolve to unmanaged data."""
+    folder = target / "dictionaries" / pin["id"]
+    safe_destination(folder / ".ereader-probe")
+    if folder.exists() and not folder.is_dir():
+        raise ValueError(f"Expected a dictionary directory: {folder}")
+    hidden = target / ".dictionaries" / pin["id"]
+    safe_destination(hidden / ".ereader-probe")
+    if hidden.exists():
+        raise ValueError(f"Conflicting hidden dictionary; rename it before installing: {hidden}")
+    ifo = next(prepared.glob("*.ifo"))
+    metadata = dict(line.split("=", 1) for line in ifo.read_text().splitlines() if "=" in line)
+    if metadata.get("idxoffsetbits", "32") != "32":
+        raise ValueError("CrossPoint requires 32-bit dictionary index offsets")
+    indexes = [name for name in pin["members"] if name.endswith(".idx")]
+    if indexes != [ifo.stem + ".idx"]:
+        raise ValueError("CrossPoint requires one dictionary index per folder")
+    plain = folder / (ifo.stem + ".dict")
+    safe_destination(plain)
+    if plain.exists():
+        raise ValueError(f"Unmanaged plain dictionary would shadow pinned data: {plain}")
+    if folder.exists():
+        for entry in folder.glob("*.idx"):
+            if not entry.name.startswith("._") and entry.name not in indexes:
+                raise ValueError(f"Conflicting dictionary index: {entry}")
+    return folder
+
+
+def install(target, check=False, preferences=True, backup_root=None, platform="koreader"):
+    if platform not in ("koreader", "crosspoint"):
+        raise ValueError("Unsupported dictionary platform")
     target = Path(target).absolute()
-    if target.is_symlink():
+    if any(p.is_symlink() for p in (target, *target.parents)):
         raise ValueError("Symlinked target is unsupported")
     target = target.resolve()
-    if not (target / "plugins").is_dir():
+    if platform == "crosspoint":
+        safe_destination(target / ".crosspoint" / ".ereader-probe")
+        if not target.is_dir() or not (target / ".crosspoint").is_dir():
+            raise ValueError("Expected a CrossPoint SD root containing .crosspoint/; use USB Drive mode")
+        preferences = False
+    elif not (target / "plugins").is_dir():
         raise ValueError("Expected an existing KOReader directory containing plugins/")
     lock = pins()
     with tempfile.TemporaryDirectory(prefix="ereader-dictionaries-") as temporary:
@@ -174,19 +209,28 @@ def install(target, check=False, preferences=True, backup_root=None):
         for pin in lock:
             prepared = Path(temporary) / pin["id"]
             extract(pin, prepared)
+            folder = (crosspoint_folder(target, pin, prepared) if platform == "crosspoint"
+                      else target / "data/dict" / pin["id"])
             for name in pin["members"]:
                 source = prepared / name
-                destination = target / "data/dict" / pin["id"] / name
+                destination = folder / name
                 safe_destination(destination)
                 before = digest(destination)
                 if before != digest(source):
-                    changes.append((source, destination, before))
-                    # sdcv's index-offset caches must not survive index replacements.
+                    # CrossPoint caches only source sizes: same-size edits need invalidation too.
                     if name.endswith((".idx", ".syn")):
-                        cache = destination.with_name(destination.name + ".oft")
-                        safe_destination(cache)
-                        if cache.exists():
-                            changes.append((None, cache, digest(cache)))
+                        if platform == "crosspoint":
+                            suffixes = (".qidx", ".sidx") if name.endswith(".idx") else (".sidx",)
+                            caches = [destination.with_suffix(suffix) for suffix in suffixes]
+                        else:
+                            caches = [destination.with_name(destination.name + ".oft")]
+                        for cache in caches:
+                            safe_destination(cache)
+                            if cache.exists() and not any(d == cache for _, d, _ in changes):
+                                changes.append((None, cache, digest(cache)))
+                    # Remove caches before replacing the index: interrupted installs must
+                    # never leave a new same-size index paired with stale lookup offsets.
+                    changes.append((source, destination, before))
         merges = settings.plan_files(target, {"settings.reader.lua": [PROFILE]}) if preferences else []
         if not changes and not merges:
             print("Dictionaries and requested preferences are current; no writes or backup needed.")
@@ -198,7 +242,7 @@ def install(target, check=False, preferences=True, backup_root=None):
         if check:
             return False
         backup_root = Path(backup_root or ROOT / ".local/backups").resolve()
-        if backup_root.is_relative_to(target.parent):
+        if backup_root.is_relative_to(target if platform == "crosspoint" else target.parent):
             raise ValueError("Dictionary backups must be outside the device storage")
         backup_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         backup = Path(tempfile.mkdtemp(
@@ -219,7 +263,7 @@ def install(target, check=False, preferences=True, backup_root=None):
         for _, destination, before in changes:
             safe_destination(destination)
             if digest(destination) != before:
-                raise ValueError("Dictionary changed since planning; quit KOReader and retry")
+                raise ValueError("Dictionary changed since planning; stop device access and retry")
         for change in merges:
             change.verify_unchanged()
         for source, destination, before in changes:
@@ -243,7 +287,11 @@ def install(target, check=False, preferences=True, backup_root=None):
                     os.unlink(name)
         for change in merges:
             change.write()
-        print("Installed dictionaries. Safely eject and restart KOReader.")
+        if platform == "crosspoint":
+            print("Installed dictionaries. Safely eject, leave USB Drive mode, and select one in "
+                  "Settings > Reader > Dictionary.")
+        else:
+            print("Installed dictionaries. Safely eject and restart KOReader.")
         return backup
 
 

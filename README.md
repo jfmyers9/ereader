@@ -447,11 +447,11 @@ This workflow never merges upstream or drops my personal features.
 
 ### Prepare and build
 
-The pinned revision includes fixes for the missing mapped-input edge methods
-and duplicate EPUB render definitions found in `f175cda9`. The corrected source
-builds successfully for `x4pro` with pioarduino 6.1.19; 24 focused host tests
-pass. Hardware behavior remains unverified; no device has been flashed by
-this setup.
+The pinned revision `26b6631f` includes upstream `develop` through `50823ffa`
+alongside the personal changes and touch-selection exit fixes. The `x4pro`
+build uses pioarduino 6.1.19. Build, flashing, boot, and home-screen checks
+succeeded with the earlier `61632828` revision; individual features still
+need on-device smoke tests.
 
 ```sh
 git submodule update --init --recursive
@@ -463,11 +463,15 @@ python3 scripts/x4pro.py ports
 
 `prepare` creates `.local/crosspoint-toolchain/` and installs the fork's
 pioarduino Core 6.1.19 and CI support dependencies without modifying global
-Python. Repeat runs reuse it. The first build downloads compiler/platform
+Python. It then fetches and checksum-verifies the pinned GCIDE English and
+French Wiktionnaire dictionaries into `.local/dictionaries/<sha256>/`, shared
+with the KOReader setup. Repeat runs reuse the toolchain and verified archives;
+`prepare --dry-run` only prints the plan and does not download dictionaries.
+The first build downloads compiler/platform
 packages and can take substantial time and disk space. PlatformIO also uses
 its normal user-level cache and may bootstrap `~/.platformio/penv`. Add
-`--dry-run` to any command to print it without
-installing, building, or flashing. Preparation requires network access.
+`--dry-run` to any command to preview without installing, building, or flashing.
+Preparation requires network access.
 
 The helper always selects **`x4pro` (ESP32-S3)**, never the default ESP32-C3
 X4 target. It delegates incremental builds to PlatformIO. It rejects tracked
@@ -476,6 +480,47 @@ overrides rather than silently building a different configuration. Commit
 personal firmware changes in the fork before using this setup workflow.
 Source revisions are pinned; Python transitive dependencies are not fully
 locked, so this is not a bit-for-bit reproducible toolchain.
+
+### Install dictionaries on the SD card
+
+Dictionary installation is **separate from flashing**. Enable **USB Drive** mode
+on the X4 Pro and mount its SD card, or use a card reader. Back up the card first.
+Pass the mounted SD root, not a serial port or the `dictionaries/` folder:
+
+```sh
+# If prepare has not already fetched the archives (Python 3 and curl required):
+python3 scripts/dictionaries.py fetch
+python3 scripts/x4pro.py dictionaries --sd-root /Volumes/X4PRO --check
+python3 scripts/x4pro.py dictionaries --sd-root /Volumes/X4PRO
+python3 scripts/x4pro.py dictionaries --sd-root /Volumes/X4PRO --check
+```
+
+The root must already exist and contain a real `.crosspoint/` directory created
+by CrossPoint. Symlinked roots, parent paths, markers, and managed destinations
+are rejected. The dictionary command needs neither a firmware checkout/build
+nor the embedded toolchain; it does not download, flash, or modify device settings.
+No LuaJIT or KOReader preference merge is involved.
+
+The same pinned StarDict files go under `/dictionaries/gcide/` and
+`/dictionaries/wiktionnaire-fr/`. Other dictionaries and reading state are left
+alone. Conflicting `/.dictionaries/<id>` entries, extra `.idx` files in a managed
+folder, and same-stem plain `.dict` files that would override `.dict.dz` are
+rejected rather than silently removed; resolve these duplicates manually.
+
+`--check` and `--dry-run` both verify the cached archives and show planned changes
+without writing to the card or creating backups. Exit status is **0** when
+current, **1** when changes are needed, and **2** for errors. An unchanged install
+makes no writes or backup. Changed files are backed up under private
+`.local/backups/` with `dictionary-files.json`, then replaced atomically per file
+(not as one transaction). CrossPoint `.qidx` caches are backed up and invalidated
+when `.idx` changes; `.sidx` caches when `.idx` or `.syn` changes. Other changes
+leave these caches intact. CrossPoint rebuilds missing caches on lookup, which
+may take longer for the large French dictionary.
+
+Safely eject, leave USB Drive mode, and select the dictionary manually in
+**Settings → Reader → Dictionary**. CrossPoint uses one active dictionary, not
+KOReader's ordered collection or language presets. Test English and French
+lookups separately after switching the selection.
 
 ### Flash deliberately
 

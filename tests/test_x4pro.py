@@ -36,11 +36,13 @@ class X4ProTest(unittest.TestCase):
             toolchain = Path(directory) / "toolchain"
             with patch.object(x4pro, "TOOLCHAIN", toolchain), \
                     patch.object(x4pro, "validate_source"), \
-                    patch.object(x4pro.subprocess, "run") as run:
+                    patch.object(x4pro.subprocess, "run") as run, \
+                    patch.object(x4pro.dictionaries, "fetch") as fetch:
                 for args in (["prepare", "--dry-run"], ["build", "--dry-run"],
                              ["ports", "--dry-run"], ["flash", "--port", "test", "--dry-run"]):
                     x4pro.main(args)
                 run.assert_not_called()
+                fetch.assert_not_called()
                 self.assertFalse(toolchain.exists())
 
     def test_confirmed_flash_dispatches_only_requested_port(self):
@@ -57,11 +59,77 @@ class X4ProTest(unittest.TestCase):
         with patch.object(x4pro, "validate_source"), \
                 patch.object(Path, "exists", return_value=True), \
                 patch.object(x4pro.venv, "EnvBuilder") as builder, \
-                patch.object(x4pro, "run") as run:
+                patch.object(x4pro, "run") as run, \
+                patch.object(x4pro.dictionaries, "fetch") as fetch:
             x4pro.prepare()
             builder.assert_not_called()
+            fetch.assert_called_once_with()
             self.assertNotIn("--upgrade", run.call_args.args[0])
             self.assertEqual(run.call_args.args[0][-1], x4pro.REQUIREMENTS)
+
+    def cli_code(self, args):
+        try:
+            return x4pro.main(args) or 0
+        except SystemExit as error:
+            return error.code
+
+    def test_dictionaries_routes_without_toolchain_or_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            with patch.object(x4pro, "validate_source", side_effect=AssertionError("No source needed")), \
+                    patch.object(x4pro, "executable", side_effect=AssertionError("No toolchain needed")), \
+                    patch.object(x4pro, "run", side_effect=AssertionError("No build or flash")), \
+                    patch.object(x4pro.dictionaries, "fetch", side_effect=AssertionError("No download")), \
+                    patch.object(x4pro.dictionaries, "install", return_value=None) as install:
+                for flag in ([], ["--check"], ["--dry-run"], ["--check", "--dry-run"]):
+                    with self.subTest(flag=flag):
+                        self.assertEqual(self.cli_code(["dictionaries", "--sd-root", str(target)] + flag), 0)
+                        args, kwargs = install.call_args
+                        self.assertEqual(Path(args[0]), target)
+                        self.assertEqual(kwargs["platform"], "crosspoint")
+                        self.assertEqual(kwargs.get("check", False), bool(flag))
+                self.assertEqual(install.call_count, 4)
+
+    def test_dictionaries_exit_codes(self):
+        for flag in ("--check", "--dry-run"):
+            with self.subTest(flag=flag), \
+                    patch.object(x4pro.dictionaries, "install", return_value=False):
+                self.assertEqual(self.cli_code(["dictionaries", "--sd-root", "/unused", flag]), 1)
+        for error in (ValueError("invalid root"), OSError("unavailable SD")):
+            with self.subTest(error=error), \
+                    patch.object(x4pro.dictionaries, "install", side_effect=error):
+                self.assertEqual(self.cli_code(["dictionaries", "--sd-root", "/unused"]), 2)
+
+    def test_dictionaries_rejects_invalid_options_before_work(self):
+        invalid = [
+            ["dictionaries"],
+            ["dictionaries", "--sd-root", "/unused", "--port", "test"],
+            ["dictionaries", "--sd-root", "/unused", "--confirm-flash"],
+            ["prepare", "--sd-root", "/unused"],
+            ["build", "--check"],
+            ["ports", "--sd-root", "/unused"],
+            ["flash", "--port", "test", "--confirm-flash", "--check"],
+        ]
+        with patch.object(x4pro.dictionaries, "install") as install, \
+                patch.object(x4pro.dictionaries, "fetch") as fetch, \
+                patch.object(x4pro, "validate_source") as validate, \
+                patch.object(x4pro, "run") as run:
+            for args in invalid:
+                with self.subTest(args=args):
+                    self.assertEqual(self.cli_code(args), 2)
+            install.assert_not_called()
+            fetch.assert_not_called()
+            validate.assert_not_called()
+            run.assert_not_called()
+
+    def test_prepare_fetches_only_after_successful_toolchain_install(self):
+        with patch.object(x4pro, "validate_source"), \
+                patch.object(Path, "exists", return_value=True), \
+                patch.object(x4pro, "run", side_effect=OSError("toolchain failed")), \
+                patch.object(x4pro.dictionaries, "fetch") as fetch:
+            with self.assertRaises(OSError):
+                x4pro.prepare()
+            fetch.assert_not_called()
 
     def test_source_validation(self):
         with tempfile.TemporaryDirectory() as directory:
