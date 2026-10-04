@@ -9,7 +9,9 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -156,6 +158,8 @@ if __name__ == "__main__":
                         help="Also install the optional KMC no-framework scriptlet")
     parser.add_argument("--bookorbit", action="store_true",
                         help="Also install the verified public BookOrbit plugin pin (fetch first)")
+    parser.add_argument("--dictionaries", action="store_true",
+                        help="Also install cached dictionary pins and preferences (dictionaries.py fetch first)")
     parser.add_argument("--settings-profile", choices=("shared", "kindle"),
                         help="Merge curated preferences; kindle includes shared defaults (requires LuaJIT)")
     parser.add_argument("--check", action="store_true",
@@ -164,10 +168,21 @@ if __name__ == "__main__":
     # Restrict permissions on backups, including copied credentials.
     os.umask(0o077)
     try:
+        dictionary_result = None
+        if args.dictionaries:
+            from scripts import dictionaries
+
+            # Validate archives and settings before any plugin writes. Dictionaries
+            # are a separate backed-up transaction, not an all-or-nothing bundle.
+            dictionary_result = dictionaries.install(args.koreader_dir, check=True)
         result = install(args.koreader_dir, args.userspace_proxy,
                          kindle=args.kindle, check=args.check, bookorbit=args.bookorbit,
                          settings_profile=args.settings_profile)
-    except (ValueError, OSError, subprocess.SubprocessError) as error:
+        if args.dictionaries and not args.check:
+            dictionaries.install(args.koreader_dir)
+            dictionary_result = None
+    except (ValueError, OSError, KeyError, subprocess.SubprocessError,
+            tarfile.TarError, zipfile.BadZipFile) as error:
         parser.exit(2, f"Error: {error}\n")
-    if result is False:
+    if result is False or dictionary_result is False:
         parser.exit(1)

@@ -266,6 +266,70 @@ commit anything. Future installs use the exact commit, even if a release tag
 moves. Avoid the plugin's self-updater if you want it to remain at this repo's
 pin; otherwise the next check will report drift and installation restores the pin.
 
+## English and French dictionaries (host downloads, USB installation)
+
+`profiles/dictionaries.json` pins GCIDE and reader.dict's French Wiktionnaire
+StarDict package by archive SHA-256. Download on the Mac over HTTPS with retries,
+then copy over USB: KOReader's slow HTTP mirrors and Kindle Wi-Fi are not involved.
+Requires Python 3, `curl`, and host LuaJIT for the dictionary preference merge.
+
+```sh
+python3 scripts/dictionaries.py fetch
+# Quit KOReader and mount the Kindle before installing.
+python3 scripts/dictionaries.py install /Volumes/Kindle/koreader --check
+python3 scripts/dictionaries.py install /Volumes/Kindle/koreader
+# Repeat to verify: exit 0=current, 1=drift, 2=error.
+python3 scripts/dictionaries.py install /Volumes/Kindle/koreader --check
+```
+
+The usual setup command can include dictionaries too (fetch both plugin and
+dictionary pins first). Dictionary installation has its own backup transaction:
+
+```sh
+python3 scripts/bookorbit.py fetch
+python3 scripts/dictionaries.py fetch
+python3 scripts/install.py /Volumes/Kindle/koreader --kindle --bookorbit --settings-profile kindle --dictionaries --check
+python3 scripts/install.py /Volumes/Kindle/koreader --kindle --bookorbit --settings-profile kindle --dictionaries
+```
+
+Archives stay in ignored `.local/dictionaries/<sha256>/` and are verified on every
+use. Install and check are offline; neither downloads anything. For an alternate
+download route, put the exact archives in a folder with the filenames from the
+lock (`gcide.tar.gz`, `wiktionnaire-fr.zip`), then import them with:
+
+```sh
+python3 scripts/dictionaries.py fetch --from-dir /path/to/downloads
+```
+
+The French upstream URL is rolling, **not an immutable release URL**. Keep the
+verified cache or a separate archive copy for future reinstalls. If upstream
+replaces it, a fresh download fails the checksum rather than silently upgrading.
+To update deliberately, inspect the new archive's source, metadata and members,
+then review changes to its snapshot, SHA-256 and member list in the lock. Do not
+replace a checksum merely to silence an unexplained mismatch. No dictionary
+payloads are committed or redistributed by this repo.
+
+Installation manages only the pinned files in `data/dict/gcide/` and
+`data/dict/wiktionnaire-fr/`. Existing WordNet and French–English dictionaries,
+unrelated settings, and book-specific preferences survive. The installer adds
+language metadata to the extracted `.ifo` files, sets dictionary ordering, and
+seeds **English (ereader)** and **French (ereader)** presets. Select these in
+KOReader's **Dictionary presets** menu to switch languages; this is not automatic
+language detection. English prefers GCIDE before WordNet; French prefers
+Wiktionnaire before the existing translation dictionary. The fallback names and
+relative paths match this Kindle setup; adjust the profile for other layouts.
+Use standalone `install --no-preferences` to install files without changing order
+or presets (and without requiring LuaJIT).
+
+Only changed files are replaced, atomically per file. Before any device writes,
+existing changed files and settings are backed up under private `.local/backups/`;
+`dictionary-files.json` records which files previously existed. Index `.oft`
+caches are backed up and invalidated only when their corresponding index changes.
+A repeated install makes no writes or backup. Multiple files and plugin/dictionary
+transactions are not one atomic operation: after a failure, rerun or restore the
+recorded files from backup, removing only files recorded as previously absent.
+Safely eject and restart KOReader before testing lookups on the device.
+
 ## Xteink X4 Pro / personal CrossPoint
 
 `crosspoint-reader/` is a pinned submodule of
