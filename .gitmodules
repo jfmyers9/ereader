@@ -1,0 +1,3 @@
+[submodule "koreader-tailscale"]
+	path = koreader-tailscale
+	url = git@github.com:jfmyers9/koreader-tailscale.git
