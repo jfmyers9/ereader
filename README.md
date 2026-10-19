@@ -470,9 +470,10 @@ python3 scripts/x4pro.py ports
 `prepare` creates `.local/crosspoint-toolchain/` and installs the fork's
 pioarduino Core 6.1.19 and CI support dependencies without modifying global
 Python. It then fetches and checksum-verifies the pinned GCIDE English and
-French Wiktionnaire dictionaries into `.local/dictionaries/<sha256>/`, shared
-with the KOReader setup. Repeat runs reuse the toolchain and verified archives;
-`prepare --dry-run` only prints the plan and does not download dictionaries.
+French Wiktionnaire dictionaries into `.local/dictionaries/<sha256>/`, and
+Bookerly and Literata static TTF fonts into `.local/fonts/`, shared with the
+KOReader setup. Repeat runs reuse the toolchain and verified caches;
+`prepare --dry-run` only prints the plan and does not download assets.
 The first build downloads compiler/platform
 packages and can take substantial time and disk space. PlatformIO also uses
 its normal user-level cache and may bootstrap `~/.platformio/penv`. Add
@@ -487,7 +488,46 @@ personal firmware changes in the fork before using this setup workflow.
 Source revisions are pinned; Python transitive dependencies are not fully
 locked, so this is not a bit-for-bit reproducible toolchain.
 
-### Install dictionaries on the SD card
+### Set up fonts and dictionaries together
+
+After `prepare`, enable **File Transfer → USB Drive** on the X4 Pro and mount
+its SD card. Back up the card first, then substitute its actual mount path:
+
+```sh
+python3 scripts/x4pro.py setup --sd-root "/Volumes/NO NAME" --check
+python3 scripts/x4pro.py setup --sd-root "/Volumes/NO NAME"
+python3 scripts/x4pro.py setup --sd-root "/Volumes/NO NAME" --check
+```
+
+`setup` installs both **Bookerly and Literata TTFs**, with all four styles, into
+`/.fonts/`, plus **GCIDE English and French Wiktionnaire** into `/dictionaries/`.
+It checks both sets before writing either, including cached file integrity,
+the `.crosspoint/` SD marker, and conflicting fonts or dictionaries. Legacy
+`.cpfont` files in the managed font folders are rejected; back them up outside
+the card and remove those conflicting copies explicitly before retrying.
+
+Setup is offline: it never downloads, builds, flashes, or changes reading
+preferences, credentials, or the selected font/dictionary. It requires neither
+the embedded toolchain nor a firmware checkout. To prepare only the asset
+caches without setting up the build tools, run:
+
+```sh
+python3 scripts/fonts.py fetch
+python3 scripts/dictionaries.py fetch
+```
+
+`--check` and `--dry-run` are read-only: **0** means both sets are current,
+**1** means updates are needed, and **2** means an error. Repeated setup is a
+no-op when current. Changes use the existing installers' separate private
+backups under `.local/backups/`; the combined operation is **not atomic**.
+If a write fails, resolve the error and rerun, or restore the affected files
+from the printed backup paths. Unrelated files are preserved.
+
+Safely eject, leave USB Drive mode, and restart. Select the font family and
+dictionary under **Settings → Reader**. Verify regular/bold/italic text and
+dictionary lookups on the device. Flashing remains a separate explicit command.
+
+### Install dictionaries only on the SD card
 
 Dictionary installation is **separate from flashing**. Enable **USB Drive** mode
 on the X4 Pro and mount its SD card, or use a card reader. Back up the card first.
