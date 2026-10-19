@@ -604,6 +604,58 @@ identity remain device-owned; this repo does not provision or commit them.
 Do not copy the Kindle's Tailscale plugin, binaries, or identity to this device.
 Avoid official OTA updates if you want to retain the personal firmware.
 
+### Check firmware updates and verify a checkout
+
+```sh
+# Fetch and compare the personal fork and upstream; no branch or pin changes.
+python3 scripts/x4pro.py updates
+# Use already-fetched refs instead (not a live update check).
+python3 scripts/x4pro.py updates --no-fetch
+# Also run regression tests and build the current X4 Pro checkout.
+python3 scripts/x4pro.py updates --verify
+```
+
+The check reports the committed submodule pin, checked-out revision, remote
+URLs/tips, incoming and checkout-only commit counts, up to 20 incoming commit
+subjects, and a bounded diff summary from the common ancestor. It compares
+`origin/personal/develop` and `upstream/develop`; verify that these remotes point
+to your fork and the upstream project. A fresh clone may need the upstream
+remote configured explicitly:
+
+```sh
+git -C crosspoint-reader remote add upstream https://github.com/crosspoint-reader/crosspoint-reader.git
+```
+
+Fetching updates only remote-tracking refs and Git metadata, including when
+the fork branch has been rebased. It never checks out, merges, rebases, resets,
+changes the submodule pin, updates nested submodules, pushes, or flashes.
+Missing remotes/refs, unrelated histories, dirty firmware sources, local build
+overrides, or mismatched nested submodules are errors, not "up to date."
+`--dry-run` prints the plan without fetching or running tests/builds.
+
+Exit **0** means no incoming commits and the checkout matches the committed
+pin; **1** means incoming commits or an uncommitted pin change; **2** means an
+error or failed verification. A dry-run exits 0 if its plan is valid, not as
+evidence that firmware is current. Fetch failures never silently use stale refs.
+
+`--verify` tests **the current checkout**, not the remote tips or a hypothetical
+rebase. It runs this repo's Python suite, configures/builds the CrossPoint host
+suite with CMake, runs CTest, and builds `x4pro` without uploading. Commands use
+the existing isolated toolchain when available, with PATH tools as a fallback.
+CMake/CTest and the host C++ compiler must be installed; firmware dependencies
+come from `prepare`/the existing PlatformIO environment. First-time test/build
+dependencies may require downloads even with `--no-fetch` (which only disables
+the Git update fetch). Each step prints a temporary log path and its result;
+failure stops later steps. Verification writes build caches and logs, not device
+data. A passing run does not claim that the attached device matches this revision.
+
+Integrate updates deliberately, then rerun verification on the resulting
+checkout. The report includes device checks to perform **after** a separately
+authorized flash: boot and book opening, controls/orientations, frontlight,
+sleep/wake, USB Drive mode, fonts, dictionaries, saved progress, tailnet OPDS,
+and BookOrbit progress/statistics/highlights. Back up SD state first; host tests
+and a successful build cannot replace these hardware checks.
+
 ### Update the personal branch pin
 
 ```sh
